@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>96 孔板样品布局与批处理编排工具</title>
+<style>
+  /* ===== 基础样式（简洁、浅色主题） ===== */
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --line:#e3e8ef; --text:#1f2d3d;
+    --muted:#7a8794; --primary:#2f6fed; --primary-d:#1b4fc4;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,"Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--text); line-height:1.6; font-size:14px;
+  }
+  .wrap{max-width:1120px; margin:0 auto; padding:24px 18px 60px;}
+  header.app{margin-bottom:18px;}
+  header.app h1{font-size:22px; margin:0 0 4px;}
+  header.app p{margin:0; color:var(--muted);}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:18px; margin-bottom:18px; box-shadow:0 1px 3px rgba(20,40,80,.04);
+  }
+  .card h2{font-size:16px; margin:0 0 12px; display:flex; align-items:center; gap:8px;}
+  .card h2 .step{
+    width:24px; height:24px; border-radius:50%; background:var(--primary); color:#fff;
+    font-size:13px; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto;
+  }
+  /* 文本输入区 */
+  textarea{
+    width:100%; min-height:160px; border:1px solid var(--line); border-radius:8px;
+    padding:10px 12px; font-family:"SFMono-Regular",Consolas,Menlo,monospace; font-size:13px;
+    resize:vertical; outline:none;
+  }
+  textarea:focus{border-color:var(--primary);}
+  .row{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:12px;}
+  button{
+    border:none; border-radius:8px; padding:9px 16px; font-size:14px; cursor:pointer;
+    background:var(--primary); color:#fff; transition:.15s;
+  }
+  button:hover{background:var(--primary-d);}
+  button.ghost{background:#eef2f8; color:var(--primary);}
+  button.ghost:hover{background:#e2e9f5;}
+  .hint{color:var(--muted); font-size:12.5px;}
+  details.adv{margin-top:12px; border:1px dashed var(--line); border-radius:8px; padding:8px 12px;}
+  details.adv summary{cursor:pointer; color:var(--primary); font-size:13px;}
+  details.adv .opt{display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; align-items:center;}
+  details.adv label{font-size:13px; color:var(--text);}
+  details.adv input{width:70px; padding:5px 7px; border:1px solid var(--line); border-radius:6px;}
+  /* 标准曲线输入区 */
+  .std-block{margin-top:12px; padding:10px 12px; background:#f8fafc; border:1px solid var(--line); border-radius:8px;}
+  .std-row{display:flex; flex-wrap:wrap; gap:8px;}
+  .std-row label{display:flex; flex-direction:column; font-size:11px; color:var(--muted); gap:2px;}
+  .std-row input{width:62px; padding:4px 6px; border:1px solid var(--line); border-radius:6px; font-size:13px;}
+  /* 孔板可点击 + QC 选中高亮 */
+  .plate .well{cursor:pointer;}
+  .plate .well.qc-sel{box-shadow:0 0 0 3px #f59e0b, inset 0 0 0 1px rgba(0,0,0,.06);}
+  .plate .well.blank-sel{box-shadow:0 0 0 3px #38bdf8, inset 0 0 0 1px rgba(0,0,0,.06);}
+  /* 点击工具切换（QC / 空白样品） */
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden;}
+  .seg-btn{background:#fff; border:none; padding:7px 14px; font-size:13px; cursor:pointer; color:var(--muted);}
+  .seg-btn.active{background:var(--primary); color:#fff;}
+  .seg-btn + .seg-btn{border-left:1px solid var(--line);}
+  /* 统计条 */
+  .stats{display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px;}
+  .stat{background:#f0f4fb; border:1px solid var(--line); border-radius:8px; padding:8px 14px; font-size:13px;}
+  .stat b{color:var(--primary-d); font-size:16px; margin-right:4px;}
+  /* 解析表格 */
+  table{border-collapse:collapse; width:100%; font-size:13px;}
+  th,td{border:1px solid var(--line); padding:6px 10px; text-align:center;}
+  th{background:#f3f6fb; color:var(--muted); font-weight:600;}
+  .tbl-scroll{overflow-x:auto;}
+  /* 图例 */
+  .legend{display:flex; flex-wrap:wrap; gap:14px; margin-bottom:14px;}
+  .legend span{display:inline-flex; align-items:center; gap:6px; font-size:13px;}
+  .dot{width:14px; height:14px; border-radius:4px; display:inline-block;}
+  /* 96 孔板 */
+  .plate{
+    display:grid; grid-template-columns:34px repeat(12,1fr); gap:5px; max-width:760px;
+  }
+  .plate .corner{background:transparent;}
+  .plate .colhead,.plate .rowhead{
+    display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; font-weight:600;
+  }
+  .plate .well{
+    aspect-ratio:1/1; border-radius:7px; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; color:#fff; font-size:11px; line-height:1.15; padding:2px; cursor:default;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.06); overflow:hidden;
+  }
+  .plate .well.empty{background:#f1f3f7; color:#b9c2cf; box-shadow:inset 0 0 0 1px var(--line);}
+  .plate .well .wid{font-weight:700; opacity:.95;}
+  .plate .well .sid{font-size:9.5px; opacity:.92; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  /* 批次序列 */
+  .batch{border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px;}
+  .batch h4{margin:0 0 8px; font-size:14px;}
+  .batch .cnt{color:var(--muted); font-weight:400; font-size:12.5px;}
+  #batchBox{user-select:text;} /* 第四部分表格可自由选中/复制 */
+  .tag{display:inline-block; padding:1px 8px; border-radius:10px; color:#fff; font-size:11.5px;}
+  .empty-note{color:var(--muted); padding:8px 2px;}
+  a.dl{color:var(--primary); text-decoration:none; font-size:13px;}
+  a.dl:hover{text-decoration:underline;}
+  code.fmt{background:#eef2f8; padding:1px 6px; border-radius:5px; font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="app">
+    <h1>96 孔板样品布局与批处理编排工具</h1>
+    <p>粘贴样品清单 → 自动解析与归类 → 一键生成 96 孔板可视化布局 → 按时间点编排分析批处理序列。</p>
+  </header>
+
+  <!-- 步骤 1：数据输入 -->
+  <section class="card">
+    <h2><span class="step">1</span>粘贴样品信息</h2>
+    <p class="hint" style="margin-top:0">
+      多列数据请用 <b>逗号 / 制表符 / 分号</b> 分隔（首行可带表头，含"样品ID、类型、浓度、组别、时间点、重复"等关键词即自动识别）；<b>含空格的样品名会作为整体保留，不会被截断</b>。
+      时间点（如 Pre-dose、672hr、T15）与组别（Group2）可从样品名<b>自动识别</b>，无需单独成列。仅粘贴<b>待测样品</b>与<b>空白</b>即可——<b>标准品</b>使用上方默认模板（A1–A8/B1–B8），<b>质控 QC</b>在下方板中点击空闲孔位直接生成（自动命名为 QC-1、QC-2…）。
+    </p>
+    <textarea id="input" placeholder="在此粘贴样品清单（标准品与质控无需粘贴：标准曲线用默认模板，质控在板中点击空闲孔生成）。例如：&#10;样品ID,类型,浓度,组别,时间点,重复&#10;BLK,空白,,,T0,1&#10;S001,样品,待测,GroupA,T0,2"></textarea>
+
+    <!-- 标准曲线：固定默认位置（A1–A8 / B1–B8），仅可改浓度 -->
+    <div class="std-block">
+      <div class="hint" style="margin:0 0 6px">标准曲线（固定置于 <b>A1–A8</b> 与 <b>B1–B8</b>，B 行与 A 行相同；此处仅修改各点浓度）：</div>
+      <div class="std-row" id="stdRow">
+        <label>STD1<input id="std1" value="1"></label>
+        <label>STD2<input id="std2" value="2"></label>
+        <label>STD3<input id="std3" value="5"></label>
+        <label>STD4<input id="std4" value="10"></label>
+        <label>STD5<input id="std5" value="20"></label>
+        <label>STD6<input id="std6" value="50"></label>
+        <label>STD7<input id="std7" value="100"></label>
+        <label>STD8<input id="std8" value="200"></label>
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="btnRun">解析并生成布局</button>
+      <button class="ghost" id="btnDemo">载入示例数据</button>
+      <button class="ghost" id="btnClear">清空</button>
+      <span class="hint" id="parseMsg"></span>
+    </div>
+    <details class="adv">
+      <summary>布局规则说明</summary>
+      <div class="opt">
+        <span class="hint"><b>校正区（A、B 两行，共 24 孔）：</b>A1–A8 与 B1–B8 放置标准曲线 STD1–8（B 行与 A 行完全相同，浓度在上方修改）；A9/A10/B9/B10 为空白对照，A11/B11 为单空白。<b>QC</b> 在板中<b>点击空闲孔位</b>直接生成（自动命名为 QC-1、QC-2…）。<b>待测样品</b>自 C 行起顺序排布，自动跳过已占孔位。</span>
+      </div>
+    </details>
+  </section>
+
+  <!-- 步骤 2：解析结果 -->
+  <section class="card" id="secParsed" style="display:none">
+    <h2><span class="step">2</span>解析结果预览</h2>
+    <div class="stats" id="stats"></div>
+    <div class="tbl-scroll"><table id="parsedTable"></table></div>
+  </section>
+
+  <!-- 步骤 3：96 孔板可视化 -->
+  <section class="card" id="secPlate" style="display:none">
+    <h2><span class="step">3</span>96 孔板布局可视化（8 行 × 12 列）</h2>
+    <div class="legend" id="legend"></div>
+    <div class="row" style="margin-top:0">
+      <span class="hint">点击工具：</span>
+      <div class="seg" id="toolSeg">
+        <button type="button" class="seg-btn active" data-tool="QC">质控 QC</button>
+        <button type="button" class="seg-btn" data-tool="Blank">空白样品</button>
+      </div>
+      <span class="hint" id="qcHint"></span>
+      <button class="ghost" id="btnClearQc">清除 QC</button>
+      <button class="ghost" id="btnClearBlank">清除空白样品</button>
+    </div>
+    <div id="plateBox"></div>
+  </section>
+
+  <!-- 步骤 4：批处理编排 -->
+  <section class="card" id="secBatch" style="display:none">
+    <h2><span class="step">4</span>按时间点编排分析批处理序列</h2>
+    <div class="row" style="margin-top:0">
+      <label class="hint">每批次最大进样数：<input type="number" id="maxBatch" value="48" min="1" max="96" style="width:70px;padding:5px 7px;border:1px solid var(--line);border-radius:6px"></label>
+      <button id="btnBatch">生成批处理序列</button>
+      <span class="hint">序列顺序（与示例 Excel 一致）：SS×6 → 空白+Zero → 前标曲(A1-A8) → Carryover+2空白 → 质控 → 2空白 → 各时间点样品（Pre-dose 置首、其余从高到低；每时间点后 2 针空白样品）→ 质控 → 2空白 → 空白+Zero → 后标曲(B1-B8) → Carryover+2空白。每条标曲前编入 1 空白 + 1 Zero。超出每批次上限自动拆分；空白样品请在板中点击放置。</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost" id="btnCopyBatch">📋 复制表格（可直接粘贴到 Excel）</button>
+      <span class="hint" id="copyMsg"></span>
+      <a class="dl" id="dlLayout" href="javascript:void(0)">⬇ 导出孔位布局 CSV</a>
+      <a class="dl" id="dlBatch" href="javascript:void(0)">⬇ 导出批处理序列 CSV</a>
+      <a class="dl" href="javascript:window.print()">🖨 打印 / 存为 PDF</a>
+    </div>
+    <div id="batchBox" style="margin-top:14px"></div>
+  </section>
+</div>
+
+<script>
+/* =========================================================================
+   本工具全部逻辑（纯原生 JS，无需任何外部依赖）
+   主要流程：parseInput → assignWells → renderPlate / buildSequence
+   ========================================================================= */
+
+// 孔板坐标定义
+const ROWS = ['A','B','C','D','E','F','G','H'];
+const COLS = 12;
+const wellId  = (r,c)=> ROWS[r] + (c+1);
+const wellIdx = (r,c)=> r*COLS + c;
+
+// 样品类型 → 显示名 + 颜色
+const TYPE_META = {
+  Blank:    {label:'Blank(空白对照)', color:'#9aa3af'},
+  Standard: {label:'标准品/校准',   color:'#2f6fed'},
+  QC:       {label:'质控 QC',       color:'#f59e0b'},
+  BlankSample:{label:'空白样品',    color:'#38bdf8'},
+  Zero:     {label:'Zero(单空白)',  color:'#475569'},
+  SS:       {label:'SS(系统平衡)',  color:'#14b8a6'},
+  Carryover:{label:'残留评估', color:'#f43f5e'},
+  Control:  {label:'对照/阳性',     color:'#8b5cf6'},
+  Sample:   {label:'样品/待测',     color:'#22a06b'},
+  Unknown:  {label:'未指定',        color:'#cbd5e1'}
+};
+
+// ---------- 工具函数 ----------
+const numOrInf = v => { const n=parseFloat(v); return isFinite(n)?n:Infinity; };
+// 从时间点字符串提取数字用于排序（T15→15，Pre-dose→0，无法解析的排最后）
+const numKey = tp => {
+  if(tp==='未指定') return Infinity;
+  if(/pre[-_ ]?dose/i.test(tp)) return 0;            // 给药前视为时间 0
+  const m = String(tp).match(/(\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : Infinity;
+};
+
+// 类型归一化（有"类型"列时）
+function normalizeType(raw){
+  const s = raw.toString().toLowerCase();
+  if(/blank|空白|阴性|neg|零|zero/.test(s)) return 'Blank';
+  if(/std|standard|标准|校准|calibrat/.test(s)) return 'Standard';
+  if(/qc|质控|quality/.test(s)) return 'QC';
+  if(/control|对照|阳性|pos/.test(s)) return 'Control';
+  if(/sample|样品|样本|未知|unknown|test|待测|subject/.test(s)) return 'Sample';
+  return 'Sample';
+}
+// 无"类型"列时，依据样品ID关键词自动识别
+function autoTypeFromId(id){
+  const s = id.toLowerCase();
+  if(/blank|空白|neg|零|zero|阴性/.test(s)) return 'Blank';
+  if(/std|cal|标准|校准/.test(s)) return 'Standard';
+  if(/qc|质控/.test(s)) return 'QC';
+  if(/control|对照|pos|阳性/.test(s)) return 'Control';
+  return 'Sample';
+}
+// 从样品名中识别时间点：Pre-dose / 672hr / 24 h / T15 等
+function extractTimePoint(id){
+  if(/pre[-_ ]?dose/i.test(id)) return 'Pre-dose';
+  const m = id.match(/(\d+(?:\.\d+)?)\s*h[rR]\b/i);   // 672hr / 24 h / 1.5h
+  if(m) return m[1]+'hr';
+  const t = id.match(/\bT(\d+(?:\.\d+)?)\b/i);          // T0 / T15
+  if(t) return 'T'+t[1];
+  return '';
+}
+// 从样品名中识别组别：Group2 等
+function extractGroup(id){
+  const m = id.match(/Group\s*(\d+)/i);
+  return m ? 'Group'+m[1] : '';
+}
+
+// 分隔符探测
+function detectDelimiter(line){
+  if(line.includes('\t')) return '\t';
+  if(line.includes(','))  return ',';
+  if(line.includes(';'))  return ';';
+  return null; // 空格分隔
+}
+function splitLine(line, delim){
+  // 无结构化分隔符（逗号/制表符/分号）时，整行作为单个字段（样品名可含空格，避免被截断）
+  if(delim===null) return [line.trim()];
+  return line.split(delim).map(s=>s.trim());
+}
+
+// 是否为表头（含任一关键词即视为表头）
+const HEADER_RE = /(样品|样本|名称|name|id|编号|sample|类型|类别|type|category|浓度|conc|concentration|组别|组|group|时间点|时间|time|重复|复孔|rep|replicate|平行)/i;
+
+// ---------- 核心：解析输入 ----------
+function parseInput(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>0);
+  if(lines.length===0) return [];
+  const delim = detectDelimiter(lines[0]);
+  let header=null, dataLines=lines;
+  // 仅当首行含结构化分隔符（逗号/制表符/分号）且命中关键词时才视为表头，
+  // 避免含 Group 等关键词的样品名（无分隔符）被误判为表头而遭丢弃/截断
+  const firstHasDelim = /[,\t;]/.test(lines[0]);
+  if(firstHasDelim && HEADER_RE.test(lines[0])){
+    header = splitLine(lines[0], delim).map(h=>h.toLowerCase());
+    dataLines = lines.slice(1);
+  }
+  // 列索引映射
+  let col = {};
+  if(header){
+    const find = re => header.findIndex(h=>re.test(h));
+    col.id   = Math.max(find(/样品|样本|名称|name|id|编号|sample/), 0);
+    col.type = find(/类型|类别|type|category/);
+    col.conc = find(/浓度|conc|concentration|含量/);
+    col.group= find(/组别|组|group/);
+    col.time = find(/时间点|时间|time|采样/);
+    col.rep  = find(/重复|复孔|rep|replicate|平行/);
+  }
+  const samples = [];
+  dataLines.forEach((line,i)=>{
+    const f = splitLine(line, delim);
+    const id   = (col.id!=null && f[col.id]) ? f[col.id] : (f[0] || ('行'+(i+1)));
+    const tRaw = (col.type!=null && f[col.type]!=null) ? f[col.type] : '';
+    const type = tRaw ? normalizeType(tRaw) : autoTypeFromId(id);
+    const conc = (col.conc!=null && f[col.conc]!==undefined && f[col.conc]!=='') ? f[col.conc] : '';
+    const group= (col.group!=null && f[col.group]) ? f[col.group] : (extractGroup(id) || '');
+    const timeP= (col.time!=null && f[col.time]) ? f[col.time] : (extractTimePoint(id) || '未指定');
+    const repR = (col.rep!=null && f[col.rep]) ? parseInt(f[col.rep],10) : 1;
+    const rep  = (isFinite(repR) && repR>0) ? repR : 1;
+    samples.push({id, type, conc, group, timePoint:timeP, rep});
+  });
+  return samples;
+}
+
+// ---------- 核心：自动分配孔位 ----------
+// samples: 已解析样品（不含标准品）；standards: 标准曲线模板 [{id,conc}]；qcPositions: 点击指定的孔位数组
+function assignWells(samples, standards, qcPositions, blankPositions){
+  const wells=[]; const occ=new Map();
+  function setWell(row,col,sample,repIndex,repTotal){
+    const idx=wellIdx(row,col);
+    if(occ.has(idx)) return false;
+    const w={well:wellId(row,col), row, col, index:idx,
+      sampleId:sample.id, type:sample.type, conc:sample.conc, group:sample.group,
+      timePoint:sample.timePoint, repIndex, repTotal};
+    occ.set(idx,w); wells.push(w); return true;
+  }
+  function placeFree(sample,repIndex,repTotal){
+    for(let r=0;r<8;r++) for(let c=0;c<12;c++){
+      if(!occ.has(wellIdx(r,c))){ setWell(r,c,sample,repIndex,repTotal); return true; }
+    }
+    return false;
+  }
+  // 样品分类（不含标准品与质控；二者分别由模板/点击生成）
+  const blanks=[], controls=[], study=[];
+  samples.forEach(s=>{
+    if(s.type==='Blank') blanks.push(s);
+    else if(s.type==='Control') controls.push(s);
+    else study.push(s);
+  });
+  const warn=[];
+  // --- 校正区：前一套标准曲线放 A1-A8，后一套放 B1-B8（来自模板）---
+  standards.forEach((s,k)=>{
+    if(k<8){
+      setWell(0, k, {id:s.id, type:'Standard', conc:s.conc, group:'', timePoint:'校准-前', rep:1, set:'front'}, 1, 1); // A1-A8 前标曲
+      setWell(1, k, {id:s.id, type:'Standard', conc:s.conc, group:'', timePoint:'校准-后', rep:1, set:'back'}, 1, 1);  // B1-B8 后标曲
+    } else warn.push('标准品超过模板容量(8)，多余者未放置');
+  });
+  // 空白对照：A9/A10/B9/B10 —— 固定为 Blank（不随粘贴数据改变）
+  [[0,8],[0,9],[1,8],[1,9]].forEach(([r,c])=>{
+    setWell(r, c, {id:'Blank', type:'Blank', conc:'', group:'', timePoint:'校准', rep:1}, 1, 1);
+  });
+  // Zero（单空白，0）：A11/B11
+  [[0,10],[1,10]].forEach(([r,c])=>{
+    setWell(r, c, {id:'Zero', type:'Zero', conc:'0', group:'', timePoint:'校准', rep:1}, 1, 1);
+  });
+  // SS（系统平衡）：A12/B12
+  [[0,11],[1,11]].forEach(([r,c])=>{
+    setWell(r, c, {id:'SS', type:'SS', conc:'SS', group:'', timePoint:'校准', rep:1}, 1, 1);
+  });
+  // --- QC：由点击的空闲孔位直接生成（命名为 QC-1, QC-2, ...） ---
+  qcPositions.forEach((p,i)=>{
+    const row=ROWS.indexOf(p[0]), col=parseInt(p.slice(1),10)-1;
+    if(occ.has(wellIdx(row,col))){ warn.push('QC 孔位 '+p+' 与已有样品冲突，已跳过'); return; }
+    setWell(row, col, {id:'QC-'+(i+1), type:'QC', conc:'QC', group:'', timePoint:'校准', rep:1}, 1, 1);
+  });
+  // --- 空白样品：由点击的空闲孔位直接生成（命名为 BLANK-1、BLANK-2…，与 QC 区分） ---
+  blankPositions.forEach((p,i)=>{
+    const row=ROWS.indexOf(p[0]), col=parseInt(p.slice(1),10)-1;
+    if(occ.has(wellIdx(row,col))){ warn.push('空白样品孔位 '+p+' 与已有样品冲突，已跳过'); return; }
+    setWell(row, col, {id:'BLANK-'+(i+1), type:'BlankSample', conc:'空白', group:'', timePoint:'空白', rep:1}, 1, 1);
+  });
+  if(!blankPositions.length) warn.push('未放置空白样品，批处理中每个区块（标准品/QC/各时间点）后会以占位显示 2 针空白，请在板中点击空孔位生成空白样品');
+  // --- 样品区：自 C 行(第3行)起顺序排布，跳过已占孔（标准/空白/QC） ---
+  function fillSequential(list){
+    list.forEach(s=>{ for(let k=0;k<s.rep;k++){
+      let placed=false;
+      for(let r=2;r<8 && !placed;r++) for(let c=0;c<12 && !placed;c++){
+        if(!occ.has(wellIdx(r,c))){ setWell(r,c,s,k+1,s.rep); placed=true; }
+      }
+      if(!placed) warn.push('孔板容量不足，部分样品未排布');
+    }});
+  }
+  fillSequential(controls);
+  fillSequential(study);
+  return {wells, warn};
+}
+
+// ---------- 渲染：解析表格 + 统计 ----------
+function renderParsed(samples, wells){
+  const total = samples.length;
+  const occ = wells.length;
+  const nStd = readStandards().length;
+  const nQC  = qcClicks.length;
+  const nBlank = blankClicks.length;
+  const nZero = wells.filter(w=>w.type==='Zero').length;
+  const nSS   = wells.filter(w=>w.type==='SS').length;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><b>${total}</b>样品种类</div>
+    <div class="stat"><b>${occ}</b>占用孔数 / 96</div>
+    <div class="stat"><b>${nStd}</b>标准品(模板)</div>
+    <div class="stat"><b>${nQC}</b>质控(QC)</div>
+    <div class="stat"><b>${nBlank}</b>空白样品</div>
+    <div class="stat"><b>${nZero}</b>Zero</div>
+    <div class="stat"><b>${nSS}</b>SS</div>`;
+  let h='<thead><tr><th>序号</th><th>样品ID</th><th>类型</th><th>浓度</th><th>组别</th><th>时间点</th><th>重复</th></tr></thead><tbody>';
+  samples.forEach((s,i)=>{
+    const m = TYPE_META[s.type]||TYPE_META.Unknown;
+    h+=`<tr><td>${i+1}</td><td>${s.id}</td><td><span class="tag" style="background:${m.color}">${m.label}</span></td><td>${s.conc||'-'}</td><td>${s.group||'-'}</td><td>${s.timePoint}</td><td>${s.rep}</td></tr>`;
+  });
+  h+='</tbody>';
+  document.getElementById('parsedTable').innerHTML = h;
+}
+
+// ---------- 渲染：96 孔板 ----------
+function renderPlate(wells){
+  const map={}; wells.forEach(w=>map[w.index]=w);
+  let html='<div class="plate">';
+  html+='<div class="corner"></div>';
+  for(let c=0;c<12;c++) html+=`<div class="colhead">${c+1}</div>`;
+  for(let r=0;r<8;r++){
+    html+=`<div class="rowhead">${ROWS[r]}</div>`;
+    for(let c=0;c<12;c++){
+      const wid = ROWS[r]+(c+1);
+      const selQc = qcClicks.includes(wid);
+      const selBlank = blankClicks.includes(wid);
+      const selCls = selQc ? 'qc-sel' : (selBlank ? 'blank-sel' : '');
+      const w = map[wellIdx(r,c)];
+      if(w){
+        const m = TYPE_META[w.type]||TYPE_META.Unknown;
+        const rep = w.repTotal>1 ? `·${w.repIndex}` : '';
+        const tip = `孔位 ${w.well}\n样品 ${w.sampleId}${rep}\n类型 ${m.label}\n浓度 ${w.conc||'-'}\n组别 ${w.group||'-'}\n时间点 ${w.timePoint}\n复孔 ${w.repIndex}/${w.repTotal}`;
+        html+=`<div class="well ${selCls}" data-well="${wid}" style="background:${m.color}" title="${tip.replace(/"/g,'')}">
+                 <span class="wid">${wid}</span><span class="sid">${w.sampleId}${rep}</span></div>`;
+      } else {
+        html+=`<div class="well empty ${selCls}" data-well="${wid}"><span class="wid">${wid}</span></div>`;
+      }
+    }
+  }
+  html+='</div>';
+  document.getElementById('plateBox').innerHTML = html;
+  // 图例
+  document.getElementById('legend').innerHTML = Object.values(TYPE_META)
+    .map(m=>`<span><i class="dot" style="background:${m.color}"></i>${m.label}</span>`).join('');
+}
+
+// ---------- 核心：生成批处理序列 ----------
+// 是否为"研究样品"（参与时间点分组与标签）；空白样品(BlankSample)单独插入、不计入时间点标签
+function isStudyWell(w){ return ['Sample','Control','Unknown'].includes(w.type); }
+// 在可用孔位间循环引用，生成 n 次进样（用于 SS×N、空白/Zero 等需重复进样或取首孔的区块）
+function repInj(arr, n){
+  const out=[]; if(!arr.length) return out;
+  for(let i=0;i<n;i++) out.push(arr[i % arr.length]);
+  return out;
+}
+function buildSequence(wells, maxBatch){
+  const byType = t => wells.filter(w=>w.type===t);
+  const ssWells      = byType('SS');        // 系统平衡
+  const blankCtrl    = byType('Blank');      // 空白对照
+  const zeroWells    = byType('Zero');       // 单空白(0)
+  const standards    = byType('Standard');   // 标准曲线
+  const qcs          = byType('QC');         // 质控
+  const blankSamples = byType('BlankSample');// 可点击的空白样品（用于各时间点后的 2 针空白）
+  const study = wells.filter(w=>!['SS','Blank','Zero','Standard','QC','BlankSample'].includes(w.type));
+
+  // 研究样品按时间点分组并各自按孔位排序
+  const groups = {};
+  study.forEach(w=>{ (groups[w.timePoint]=groups[w.timePoint]||[]).push(w); });
+  // 时间点排序：Pre-dose（0）置首，其余按数值从高到低（如 672→336→168→…→6）
+  const tps = Object.keys(groups);
+  tps.sort((a,b)=>{
+    const ra = /pre[-_ ]?dose/i.test(a) ? 0 : 1;
+    const rb = /pre[-_ ]?dose/i.test(b) ? 0 : 1;
+    if(ra!==rb) return ra-rb;          // Pre-dose 永远排在最前
+    return numKey(b)-numKey(a);        // 其余数值降序（高 → 低）
+  });
+  tps.forEach(tp=> groups[tp].sort((a,b)=>a.index-b.index));
+
+  // 两针空白样品（循环引用已放置的空白样品；未放置则占位）
+  let bi = 0;
+  function twoBlanks(){
+    const out = [];
+    for(let k=0;k<2;k++){
+      if(blankSamples.length){ out.push(blankSamples[bi % blankSamples.length]); bi++; }
+      else out.push({well:'—', sampleId:'空白样品(未放置!)', type:'BlankSample',
+                     conc:'', group:'', timePoint:'空白', repIndex:1, repTotal:1, index:1e9});
+    }
+    return out;
+  }
+
+  // 前/后两套标曲：A1-A8（前，row=0）/ B1-B8（后，row=1）
+  const frontStd = standards.filter(w=>w.row===0);
+  const backStd  = standards.filter(w=>w.row===1);
+  // 残留评估（Carryover）：借用空白对照孔，置于 STD8 之后
+  function carryover(){
+    const w = blankCtrl.length ? blankCtrl[0] : null;
+    return {well: w? w.well : '—', sampleId:'Carryover', type:'Carryover',
+            conc:'', group:'', timePoint:'校准', repIndex:1, repTotal:1, index:1e9};
+  }
+
+  const order = [];
+  // —— 前端校正区（SS×6 → 空白+Zero → 前标曲 → Carryover+2空白 → 质控 → 2空白）——
+  order.push(...repInj(ssWells, 6));               // 先 6 针 SS（系统平衡）
+  if(blankCtrl.length)  order.push(blankCtrl[0]); // 标曲前：1 空白
+  if(zeroWells.length)  order.push(zeroWells[0]); // 标曲前：1 Zero
+  order.push(...frontStd);                         // 前标曲（A1-A8）
+  order.push(carryover());                         // STD8 后：Carryover
+  order.push(...repInj(blankCtrl, 2));             // STD8 后：2 空白
+  order.push(...qcs);                              // 前端质控
+  order.push(...repInj(blankCtrl, 2));             // 质控后：2 空白
+  // —— 研究样品：Pre-dose 置首、其余从高到低；每个时间点后 2 针空白样品 ——
+  tps.forEach(tp=>{
+    order.push(...groups[tp]);
+    order.push(...twoBlanks());
+  });
+  // —— 后端校正区（样品后：先质控 → 2空白 → 空白+Zero → 后标曲 → Carryover+2空白）——
+  order.push(...qcs);                              // 后端质控（样品后、标曲前）
+  order.push(...repInj(blankCtrl, 2));             // 质控后：2 空白
+  if(blankCtrl.length)  order.push(blankCtrl[0]); // 标曲前：1 空白（直接编成 Blank）
+  if(zeroWells.length)  order.push(zeroWells[0]); // 标曲前：1 Zero
+  order.push(...backStd);                          // 后标曲（B1-B8）
+  order.push(carryover());                         // STD8 后：Carryover
+  order.push(...repInj(blankCtrl, 2));             // STD8 后：2 空白
+
+  const batches = [];
+  for(let i=0;i<order.length;i+=maxBatch) batches.push(order.slice(i,i+maxBatch));
+  return batches;
+}
+function batchLabel(b){
+  const tps = [...new Set(b.filter(isStudyWell).map(w=>w.timePoint))];
+  if(tps.length===0) return '校准/系统（SS + 空白 + Zero + 标曲 + Carryover + QC）';
+  if(tps.length===1) return tps[0];
+  tps.sort((a,b)=>numKey(a)-numKey(b));   // 多时间点：按数值排序后展示
+  return tps.join(' / ');
+}
+function renderBatches(batches, maxBatch){
+  if(batches.length===0){ document.getElementById('batchBox').innerHTML='<div class="empty-note">请先生成布局。</div>'; return; }
+  let html='';
+  batches.forEach((b,i)=>{
+    const label = batchLabel(b);
+    html+=`<div class="batch"><h4>批次 ${i+1} · ${label} <span class="cnt">(${b.length} 个进样)</span></h4>`;
+    html+='<table><thead><tr><th>进样序</th><th>孔位</th><th>样品ID</th><th>类型</th><th>浓度</th><th>组别</th><th>复孔</th></tr></thead><tbody>';
+    b.forEach((w,j)=>{
+      const m = TYPE_META[w.type]||TYPE_META.Unknown;
+      const inj = i*maxBatch + j + 1;
+      html+=`<tr><td>${inj}</td><td>${w.well}</td><td>${w.sampleId}</td>
+        <td><span class="tag" style="background:${m.color}">${m.label}</span></td>
+        <td>${w.conc||'-'}</td><td>${w.group||'-'}</td><td>${w.repIndex}/${w.repTotal}</td></tr>`;
+    });
+    html+='</tbody></table></div>';
+  });
+  document.getElementById('batchBox').innerHTML = html;
+}
+
+// ---------- CSV 导出 ----------
+function csvEscape(v){ v = v==null?'':String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+let CURRENT = {wells:[], samples:[]};
+let qcClicks = [];    // 用户点击指定的 QC 孔位（wellId 数组，按点击顺序）
+let blankClicks = []; // 用户点击指定的空白样品孔位（wellId 数组，按点击顺序）
+let currentTool = 'QC'; // 当前点击工具：'QC' 或 'Blank'
+function exportLayoutCSV(){
+  if(!CURRENT.wells.length) return;
+  const head = ['行','列','孔位','样品ID','类型','浓度','组别','时间点','复孔序号','复孔总数'];
+  const rows = CURRENT.wells.map(w=>[ROWS[w.row], w.col+1, w.well, w.sampleId,
+    (TYPE_META[w.type]||TYPE_META.Unknown).label, w.conc, w.group, w.timePoint, w.repIndex, w.repTotal]);
+  const csv = [head, ...rows].map(r=>r.map(csvEscape).join(',')).join('\r\n');
+  downloadBlob('96孔板布局.csv', csv);
+}
+function exportBatchCSV(){
+  const maxBatch = parseInt(document.getElementById('maxBatch').value,10)||96;
+  const batches = buildSequence(CURRENT.wells, maxBatch);
+  if(!batches.length) return;
+  const head = ['批号','批次类型','进样序','孔位','样品ID','类型','浓度','组别','复孔'];
+  const rows=[];
+  batches.forEach((b,i)=>{
+    b.forEach((w,j)=>{
+      rows.push([i+1, batchLabel(b), i*maxBatch+j+1, w.well, w.sampleId,
+        (TYPE_META[w.type]||TYPE_META.Unknown).label, w.conc, w.group, w.repIndex+'/'+w.repTotal]);
+    });
+  });
+  const csv = [head, ...rows].map(r=>r.map(csvEscape).join(',')).join('\r\n');
+  downloadBlob('批处理序列.csv', csv);
+}
+function downloadBlob(name, content){
+  const blob = new Blob(['﻿'+content], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ---------- 复制整张序列表格（TSV，可直接粘贴到 Excel）----------
+let copyTimer=null;
+function copyMsg(msg, ok){
+  const el=document.getElementById('copyMsg'); if(!el) return;
+  el.textContent=msg; el.style.color = (ok===false) ? '#e0533d' : '#22a06b';
+  clearTimeout(copyTimer); copyTimer=setTimeout(()=>{ el.textContent=''; }, 2800);
+}
+function buildBatchTSV(){
+  const maxBatch = parseInt(document.getElementById('maxBatch').value,10)||96;
+  const batches = buildSequence(CURRENT.wells, maxBatch);
+  if(!batches.length) return '';
+  const head = ['批号','批次类型','进样序','孔位','样品ID','类型','浓度','组别','复孔'];
+  const lines = [head.join('\t')];
+  batches.forEach((b,i)=>{
+    b.forEach((w,j)=>{
+      const m = TYPE_META[w.type]||TYPE_META.Unknown;
+      lines.push([i+1, batchLabel(b), i*maxBatch+j+1, w.well, w.sampleId, m.label,
+                  w.conc||'', w.group||'', w.repIndex+'/'+w.repTotal].join('\t'));
+    });
+  });
+  return lines.join('\n');
+}
+function copyBatchTable(){
+  const text = buildBatchTSV();
+  if(!text){ copyMsg('请先生成布局', false); return; }
+  const done = ()=>copyMsg('✓ 已复制整张表，可直接粘贴到 Excel');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(()=>fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+function fallbackCopy(text, done){
+  const ta=document.createElement('textarea');
+  ta.value=text; ta.style.position='fixed'; ta.style.left='-9999px'; ta.style.top='0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  let ok=false; try{ ok=document.execCommand('copy'); }catch(e){ ok=false; }
+  document.body.removeChild(ta);
+  if(ok) done(); else copyMsg('复制失败，请手动选中表格后复制', false);
+}
+
+// ---------- 主流程绑定 ----------
+function runAll(){
+  const text = document.getElementById('input').value;
+  if(!text.trim()){ document.getElementById('parseMsg').textContent='⚠ 请先粘贴样品数据。'; return; }
+  let samples = parseInput(text);
+  const stdIgnored = samples.filter(s=>s.type==='Standard').length;
+  const qcIgnored  = samples.filter(s=>s.type==='QC').length;
+  samples = samples.filter(s=>s.type!=='Standard' && s.type!=='QC'); // 标准品/质控分别由模板/点击生成
+  if(!samples.length){ document.getElementById('parseMsg').textContent='⚠ 未解析到有效样品（标准品与质控无需粘贴）。'; return; }
+  CURRENT.samples = samples;
+  qcClicks = [];        // 重新解析时清空 QC 点击选择
+  blankClicks = [];     // 重新解析时清空空白样品选择
+  const standards = readStandards();
+  const {wells, warn} = assignWells(samples, standards, qcClicks, blankClicks);
+  CURRENT.wells = wells;
+  renderParsed(samples, wells);
+  renderPlate(wells);
+  // 自动生成批次
+  const maxBatch = parseInt(document.getElementById('maxBatch').value,10)||96;
+  renderBatches(buildSequence(wells, maxBatch), maxBatch);
+  document.getElementById('secParsed').style.display='block';
+  document.getElementById('secPlate').style.display='block';
+  document.getElementById('secBatch').style.display='block';
+  let msg = `✔ 已解析 ${samples.length} 种样品，占用 ${wells.length}/96 孔。`;
+  if(stdIgnored || qcIgnored) msg += ` ⚠ 已忽略粘贴的 ${stdIgnored} 个标准品与 ${qcIgnored} 个质控（标准品用模板、质控请点击空孔生成）`;
+  if(warn.length) msg += ' ⚠ '+warn.join('；');
+  document.getElementById('parseMsg').textContent = msg;
+  updateQcCounter();
+  document.getElementById('secPlate').scrollIntoView({behavior:'smooth'});
+}
+
+// ---------- 标准曲线模板（读取输入框） ----------
+function readStandards(){
+  const arr=[];
+  for(let i=1;i<=8;i++){
+    const v=document.getElementById('std'+i).value.trim();
+    arr.push({id:'STD'+i, conc: v!=='' ? v : '1'});
+  }
+  return arr;
+}
+// QC 数量 = 已点击的孔位数
+function qcUnitCount(){ return qcClicks.length; }
+// 提示（短暂显示后恢复计数）
+let noteTimer=null;
+function note(msg){
+  const el=document.getElementById('qcHint'); if(!el) return;
+  el.textContent=msg; el.style.color='#e0533d';
+  clearTimeout(noteTimer); noteTimer=setTimeout(updateQcCounter, 2500);
+}
+function updateQcCounter(){
+  const el=document.getElementById('qcHint'); if(!el) return;
+  el.style.color='';
+  const toolName = currentTool==='QC' ? '质控 QC（QC-1、QC-2…）' : '空白样品（BLANK-1、BLANK-2…）';
+  el.textContent = `当前工具：${toolName}　|　已选 QC ${qcClicks.length} 个、空白样品 ${blankClicks.length} 个　|　点击板中空闲孔位生成/取消`;
+}
+// 点击空闲孔位生成 QC 或 空白样品（取决于当前工具）
+function onPlateClick(e){
+  const cell = e.target.closest('.well'); if(!cell) return;
+  const wid = cell.getAttribute('data-well'); if(!wid) return;
+  const row = ROWS.indexOf(wid[0]);
+  if(row<2){ note('校正区（A/B 行）为固定标准品与空白对照，不能指定为 QC 或空白样品'); return; }
+  const isQC = currentTool==='QC';
+  const active = isQC ? qcClicks : blankClicks;
+  const other  = isQC ? blankClicks : qcClicks;
+  const idx = active.indexOf(wid);
+  if(idx>=0){ active.splice(idx,1); relayout(); return; }      // 再次点击取消
+  if(other.indexOf(wid)>=0){ note(`孔位 ${wid} 已指定为「${isQC?'空白样品':'QC'}」，不能重复指定`); return; }
+  const occ = CURRENT.wells.find(w=>w.well===wid);            // 仅允许在空闲孔位上生成
+  if(occ){ note(`孔位 ${wid} 已被「${occ.sampleId}」占用，无法指定`); return; }
+  active.push(wid);
+  relayout();
+}
+// 依据当前数据 + QC 点击重新生成布局
+function relayout(){
+  if(!CURRENT.samples.length) return;
+  const standards = readStandards();
+  const {wells, warn} = assignWells(CURRENT.samples, standards, qcClicks, blankClicks);
+  CURRENT.wells = wells;
+  renderPlate(wells);
+  const maxBatch = parseInt(document.getElementById('maxBatch').value,10)||96;
+  renderBatches(buildSequence(wells, maxBatch), maxBatch);
+  updateQcCounter();
+}
+
+// 示例数据（标准品用模板、质控点击生成，均无需粘贴）
+const DEMO = `样品ID,类型,浓度,组别,时间点,重复
+BLK,空白,,,T0,1
+S001,样品,待测,GroupA,T0,2
+S002,样品,待测,GroupA,T0,2
+S003,样品,待测,GroupA,T15,2
+S004,样品,待测,GroupA,T15,2
+S005,样品,待测,GroupA,T30,2
+S006,样品,待测,GroupA,T30,2
+S007,样品,待测,GroupB,T0,2
+S008,样品,待测,GroupB,T15,2
+S009,样品,待测,GroupB,T30,2
+S010,样品,待测,GroupB,T60,2
+S011,样品,待测,GroupC,T0,2
+S012,样品,待测,GroupC,T15,2
+S013,样品,待测,GroupC,T30,2
+S014,样品,待测,GroupC,T60,2
+S015,样品,待测,GroupA,T60,2
+S016,样品,待测,GroupB,T60,2`;
+
+// 事件绑定
+document.getElementById('btnRun').addEventListener('click', runAll);
+document.getElementById('btnDemo').addEventListener('click', ()=>{
+  document.getElementById('input').value=DEMO;
+  runAll();
+  qcClicks=['G1','G2','G3'];      // 演示：点击空闲孔位生成 QC-1、QC-2、QC-3
+  blankClicks=['H1','H2','H3'];   // 演示：点击空闲孔位生成 BLANK-1、BLANK-2、BLANK-3
+  relayout();
+});
+document.getElementById('btnClear').addEventListener('click', ()=>{
+  document.getElementById('input').value='';
+  qcClicks=[]; blankClicks=[];
+  document.getElementById('parseMsg').textContent='';
+  document.getElementById('qcHint').textContent='';
+  ['secParsed','secPlate','secBatch'].forEach(id=>document.getElementById(id).style.display='none');
+});
+document.getElementById('btnBatch').addEventListener('click', ()=>{
+  const maxBatch = parseInt(document.getElementById('maxBatch').value,10)||96;
+  renderBatches(buildSequence(CURRENT.wells, maxBatch), maxBatch);
+});
+// 孔板点击指定 QC
+document.getElementById('plateBox').addEventListener('click', onPlateClick);
+// 清除 QC 选择
+document.getElementById('btnClearQc').addEventListener('click', ()=>{ qcClicks=[]; relayout(); });
+// 清除空白样品选择
+document.getElementById('btnClearBlank').addEventListener('click', ()=>{ blankClicks=[]; relayout(); });
+// 切换点击工具（QC / 空白样品）
+document.getElementById('toolSeg').addEventListener('click', e=>{
+  const btn = e.target.closest('.seg-btn'); if(!btn) return;
+  currentTool = btn.getAttribute('data-tool');
+  document.querySelectorAll('#toolSeg .seg-btn').forEach(b=>b.classList.toggle('active', b===btn));
+  updateQcCounter();
+});
+// 标准曲线浓度变更 → 重新布局（更新浓度显示）
+for(let i=1;i<=8;i++){
+  document.getElementById('std'+i).addEventListener('input', relayout);
+}
+document.getElementById('dlLayout').addEventListener('click', exportLayoutCSV);
+document.getElementById('dlBatch').addEventListener('click', exportBatchCSV);
+document.getElementById('btnCopyBatch').addEventListener('click', copyBatchTable);
+</script>
+</body>
+</html>
